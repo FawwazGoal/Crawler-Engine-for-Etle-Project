@@ -17,9 +17,16 @@ class Violation(db.Model):
     location = db.Column(db.String(50))
     penalty_type_id = db.Column(db.Integer, db.ForeignKey('penalty_types.id'))
     penalty_type_en = db.Column(db.String(50))
+    plate = db.Column(db.String(50))
+    machine_number = db.Column(db.String(50))
+    skeleton_number = db.Column(db.String(50))
     
     def to_dict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        data = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        # Remove fields that should not be in the response
+        for field in ['plate', 'machine_number', 'skeleton_number']:
+            data.pop(field, None)
+        return data
 
 @app.route('/violations', methods=['GET'])
 def get_violations():
@@ -30,8 +37,11 @@ def get_violations():
     if not all([plate, machine_number, skeleton_number]):
         return jsonify({'error': 'Missing required parameters'}), 400
 
-    # This is a placeholder for now, you'll need to query your database based on these parameters
-    violations_query = Violation.query.all()
+    violations_query = Violation.query.filter_by(
+        plate=plate,
+        machine_number=machine_number,
+        skeleton_number=skeleton_number
+    ).all()
 
     all_violations = [violation.to_dict() for violation in violations_query]
     return jsonify(all_violations)
