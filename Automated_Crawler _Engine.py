@@ -14,18 +14,21 @@ def fetch_etle_data(api_endpoint, payload):
         return None
 
 # Function to insert data into PostgreSQL database
-def insert_into_db(connection, data):
+def insert_into_db(connection, data, payload):
     cursor = connection.cursor()
     insert_query = sql.SQL(
-        "INSERT INTO violations (location, penalty_type_id, penalty_type_en, status, capture_date) VALUES (%s, %s, %s, %s, %s)"
+        "INSERT INTO violations (location, penalty_type_id, penalty_type_en, status, capture_date, plate, machine_number, skeleton_number) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
     )
-    capture_date_dt = datetime.fromtimestamp(data["captureDate"] / 1000.0)  # Convert Unix timestamp to datetime
+    capture_date_dt = datetime.fromtimestamp(data["captureDate"] / 1000.0)
     cursor.execute(insert_query, (
         data["location"],
         data["penaltyTypeId"],
         data["penaltyTypeEn"],
         data["status"],
-        capture_date_dt,  # Use the datetime object
+        capture_date_dt,
+        payload["plate"],
+        payload["machine-number"],
+        payload["skeleton-number"],
     ))
     connection.commit()
 
@@ -50,11 +53,10 @@ while True:
         )
 
         # Insert data into database
-        insert_into_db(connection, violation_data)
+        insert_into_db(connection, violation_data, payload)
 
         # Close the database connection
         connection.close()
-
     else:
         print("Failed to fetch data from ETLE system.")
     
