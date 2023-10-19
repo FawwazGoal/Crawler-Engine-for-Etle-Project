@@ -1,65 +1,62 @@
-from sqlalchemy import create_engine, Table, Column, Integer, String, MetaData, DateTime
-from datetime import datetime
-import schedule
+import json
+import requests
+import psycopg2
 import time
+from datetime import datetime
+from psycopg2 import sql
 
-try:
-    # Initialize database connection
-    engine = create_engine('postgresql+pg8000://postgres:Fawwaz410133@localhost/etle_violations')
+# Function to fetch data from ETLE system
+def fetch_etle_data(api_endpoint, payload):
+    response = requests.get(api_endpoint, params=payload)
+    if response.status_code == 200:
+        return json.loads(response.text)
+    else:
+        return None
 
-    # Define table schema
-    metadata = MetaData()
-    violations_table = Table('violations', metadata,
-        Column('id', Integer, primary_key=True, autoincrement=True),
-        Column('location', String),
-        Column('penalty_type_id', String),
-        Column('penalty_type_en', String),
-        Column('status', Integer),
-        Column('capture_date', DateTime)
+# Function to insert data into PostgreSQL database
+def insert_into_db(connection, data):
+    cursor = connection.cursor()
+    insert_query = sql.SQL(
+        "INSERT INTO violations (location, penalty_type_id, penalty_type_en, status, capture_date) VALUES (%s, %s, %s, %s, %s)"
     )
+    capture_date_dt = datetime.fromtimestamp(data["captureDate"] / 1000.0)  # Convert Unix timestamp to datetime
+    cursor.execute(insert_query, (
+        data["location"],
+        data["penaltyTypeId"],
+        data["penaltyTypeEn"],
+        data["status"],
+        capture_date_dt,  # Use the datetime object
+    ))
+    connection.commit()
 
-    # Create the table
-    metadata.create_all(engine)
-
-    # Sample payload from ETLE system
-    sample_payload = {
-        "location": "Jalan Veteran Kota Serang",
-        "penaltyTypeId": "Tidak menggunakan sabuk pengaman",
-        "penaltyTypeEn": "Safety Belt Not Fastened",
-        "status": 5,
-        "captureDate": 1632904825000
-    }
-
-    # Convert Unix timestamp to Python datetime object
-    capture_date_dt = datetime.fromtimestamp(sample_payload["captureDate"] / 1000.0)
-
-    # Insert sample payload into the database
-    conn = engine.connect()
-    trans = conn.begin()  # Begin a transaction
-    try:
-        conn.execute(violations_table.insert().values(
-            location=sample_payload["location"],
-            penalty_type_id=sample_payload["penaltyTypeId"],
-            penalty_type_en=sample_payload["penaltyTypeEn"],
-            status=sample_payload["status"],
-            capture_date=capture_date_dt
-        ))
-        trans.commit()  # Commit the transaction
-    except:
-        trans.rollback()  # Rollback the transaction in case of error
-
-    conn.close()  # Close the connection
-
-    print("Sample payload inserted into the database.")
-
-except Exception as e:
-    print(f"An error occurred: {e}")
-    
-# Schedule the job function to run every 12 hours
-schedule.every(12).hours.do(job)
-
-# Keep the script running
 while True:
-    schedule.run_pending()
-    time.sleep(1)
+    # Define API endpoint and payload
+    api_endpoint = "https://belik.etle-korlantas.info/p/violation-vehicles/check-data"
+    payload = {"plate": "A1492RH", "machine-number": "4A91GD9541", "skeleton-number": "MK2NCWHANJJ018193"}
 
+    # Fetch data from ETLE system
+    etle_data = fetch_etle_data(api_endpoint, payload)
+    if etle_data:
+        # Assume the first entry in the "data" list is the one you want
+        violation_data = etle_data["data"][0]
+
+        # Connect to PostgreSQL database
+        connection = psycopg2.connect(
+            host="localhost",
+            port="5432",
+            dbname="etle_violations",
+            user="postgres",
+            password="Fawwaz410133"
+        )
+
+        # Insert data into database
+        insert_into_db(connection, violation_data)
+
+        # Close the database connection
+        connection.close()
+
+    else:
+        print("Failed to fetch data from ETLE system.")
+    
+    # Sleep for 12 hours before running again
+    time.sleep(12 * 60 * 60)
